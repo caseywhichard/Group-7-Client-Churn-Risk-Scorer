@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Client Churn Risk Scorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: two-panel workbench. Account inputs on the left, a sticky renewal-risk card on the right; stacks to one column on phones. */
+:root {
+  --bg: #f3f5f6;
+  --surface: #ffffff;
+  --ink: #17232b;
+  --muted: #5d6b74;
+  --line: #d9e0e4;
+  --accent: #0f6e74;
+  --accent-soft: #e1f0f0;
+  --low: #2f8a57;
+  --mod: #b7791f;
+  --high: #c2412d;
+  --low-soft: #e3f3ea;
+  --mod-soft: #fbf0dc;
+  --high-soft: #fbe6e2;
+  --track: #e6ebee;
+  --font-display: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --ink: #e5ecef; --muted: #93a2ab; --line: #2a3841;
+    --accent: #4fb8b8; --accent-soft: #173537; --low: #5cc28a; --mod: #e0a84a; --high: #ec7a63;
+    --low-soft: #183326; --mod-soft: #3a2f17; --high-soft: #3d1f1a; --track: #26333b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --ink: #e5ecef; --muted: #93a2ab; --line: #2a3841;
+  --accent: #4fb8b8; --accent-soft: #173537; --low: #5cc28a; --mod: #e0a84a; --high: #ec7a63;
+  --low-soft: #183326; --mod-soft: #3a2f17; --high-soft: #3d1f1a; --track: #26333b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 14px; }
+.eyebrow { font-family: var(--font-data); font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); margin: 0 0 4px; }
+h1 { font-family: var(--font-display); font-size: clamp(24px, 3.4vw, 32px); font-weight: 700; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.presets span { font-size: 12.5px; color: var(--muted); margin-right: 2px; }
+button.chip {
+  font: 500 13.5px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+button.chip:hover { border-color: var(--accent); }
+button.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } .result { position: static !important; } }
+
+.form { display: grid; gap: 16px; min-width: 0; }
+fieldset { margin: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 16px 18px 18px; display: grid; gap: 14px; min-width: 0; }
+legend { font-family: var(--font-data); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.field label { font-size: 13.5px; font-weight: 500; }
+.field output { font-family: var(--font-data); font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; white-space: nowrap; }
+.hint { font-size: 12px; color: var(--muted); }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+select { font: 14px var(--font-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg label { flex: 1; text-align: center; font-size: 13.5px; padding: 7px 4px; cursor: pointer; border-left: 1px solid var(--line); }
+.seg label:first-of-type { border-left: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--accent); font-weight: 600; }
+.seg label:has(input:checked) { background: var(--accent-soft); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.check { display: flex; gap: 7px; align-items: center; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.check input { accent-color: var(--accent); }
+details { border-top: 1px dashed var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-size: 13.5px; color: var(--muted); font-weight: 500; }
+details[open] summary { margin-bottom: 14px; }
+
+.result { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 20px 18px; display: grid; gap: 16px; min-width: 0; }
+.gauge { display: grid; justify-items: center; }
+.gauge svg { width: 100%; max-width: 300px; height: auto; display: block; }
+.gauge .pct { font-family: var(--font-data); font-size: 44px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; margin-top: 4px; }
+.gauge .cap { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.tier { border-radius: 9px; padding: 12px 14px; display: grid; gap: 3px; }
+.tier .name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.tier .name::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.tier .act { font-size: 13.5px; color: var(--ink); }
+.tier.low { background: var(--low-soft); } .tier.low .name { color: var(--low); }
+.tier.mod { background: var(--mod-soft); } .tier.mod .name { color: var(--mod); }
+.tier.high { background: var(--high-soft); } .tier.high .name { color: var(--high); }
+.money { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.money > div { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; }
+.money .k { font-size: 12px; color: var(--muted); }
+.money .v { font-family: var(--font-data); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+h2 { font-size: 13px; font-family: var(--font-data); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+.drivers { display: grid; gap: 7px; }
+.drv { display: grid; grid-template-columns: minmax(0, 1fr) 120px 48px; gap: 10px; align-items: center; font-size: 13px; }
+.drv .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drv .bar { position: relative; height: 10px; background: var(--track); border-radius: 3px; }
+.drv .bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); opacity: .5; }
+.drv .fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.drv .num { font-family: var(--font-data); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.up { color: var(--high); } .down { color: var(--low); }
+.note { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+.perf { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 14px; }
+.perf h2 { margin: 0; }
+.perf .cols { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 760px) { .perf .cols { grid-template-columns: minmax(0, 1fr); } }
+.tbl { overflow-x: auto; }
+.perf table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.perf th, .perf td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.perf th:first-child, .perf td:first-child { text-align: left; }
+.perf th { font-size: 12px; color: var(--muted); font-weight: 500; }
+.perf td { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.perf td:first-child { font-family: var(--font-body); }
+.perf tr.pick td { color: var(--accent); font-weight: 600; }
+.perf p { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 62ch; }
+.cap { display: grid; gap: 8px; }
+.cap .row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 44px; gap: 10px; align-items: center; font-size: 13px; }
+.cap .tr { height: 12px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.cap .tr span { display: block; height: 100%; background: var(--muted); }
+.cap .row.best .tr span { background: var(--accent); }
+.cap .row b { font-family: var(--font-data); font-weight: 600; text-align: right; }
+.mbar { display: none; }
+@media (max-width: 860px) {
+  body { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .mbar {
+    display: flex; align-items: center; gap: 12px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.08);
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+  .mbar .mp { font-family: var(--font-data); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 3.2ch; }
+  .mbar .mt { display: grid; line-height: 1.25; min-width: 0; flex: 1; }
+  .mbar .mt b { font-size: 14px; }
+  .mbar .mt span { font-size: 12px; color: var(--muted); }
+  .mbar a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .mbar.low b { color: var(--low); } .mbar.mod b { color: var(--mod); } .mbar.high b { color: var(--high); }
+}
+@media (prefers-reduced-motion: no-preference) { #needle { transition: transform .35s ease; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Commercial lines · renewal retention</p>
+      <h1>Client Churn Risk Scorer</h1>
+      <p class="sub">Describe a commercial account and see how likely it is to move its business at the next renewal, what that puts at risk, and what is driving the score. Start from an example account, then move the sliders.</p>
+    </div>
+    <div class="presets" role="group" aria-label="Example accounts">
+      <span>Example accounts:</span>
+      <button class="chip" data-preset="loyal" type="button">Loyal client</button>
+      <button class="chip" data-preset="typical" type="button" aria-pressed="true">Typical client</button>
+      <button class="chip" data-preset="risk" type="button">At-risk client</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <form class="form" id="form" onsubmit="return false">
+      <fieldset>
+        <legend>Account</legend>
+        <div class="grid2">
+          <div class="field"><div class="top"><label for="industry">Industry</label></div><select id="industry"></select></div>
+          <div class="field"><div class="top"><label for="annual_premium">Annual premium</label><output for="annual_premium" id="o_annual_premium"></output></div><input type="range" id="annual_premium" min="3000" max="500000" step="1000"></div>
+          <div class="field"><div class="top"><label for="commission">Commission rate</label><output id="o_commission"></output></div><input type="range" id="commission" min="8" max="15" step="0.5"></div>
+          <div class="field"><div class="top"><label for="years_with_brokerage">Years with us</label><output id="o_years_with_brokerage"></output></div><input type="range" id="years_with_brokerage" min="0.5" max="30" step="0.5"></div>
+          <div class="field"><div class="top"><label for="num_policies">Policies placed with us</label><output id="o_num_policies"></output></div><input type="range" id="num_policies" min="1" max="8" step="1"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pricing and claims</legend>
+        <div class="grid2">
+          <div class="field"><div class="top"><label for="premium_change_pct">Premium change at renewal</label><output id="o_premium_change_pct"></output></div><input type="range" id="premium_change_pct" min="-20" max="50" step="1"></div>
+          <div class="field"><div class="top"><label for="prior_increases_3yr">Increases in last 3 years</label><output id="o_prior_increases_3yr"></output></div><input type="range" id="prior_increases_3yr" min="0" max="3" step="1"></div>
+          <div class="field"><div class="top"><label for="num_claims">Claims, last 12 months</label><output id="o_num_claims"></output></div><input type="range" id="num_claims" min="0" max="6" step="1"></div>
+          <div class="field"><div class="top"><label for="total_claim_amount">Total claims paid</label><output id="o_total_claim_amount"></output></div><input type="range" id="total_claim_amount" min="0" max="200000" step="1000"><span class="hint" id="lr_hint"></span></div>
+          <div class="field"><div class="top"><label for="late_payments">Late payments</label><output id="o_late_payments"></output></div><input type="range" id="late_payments" min="0" max="5" step="1"></div>
+          <div class="field"><div class="top"><span style="font-size:13.5px;font-weight:500" id="cov_lbl">Coverage change at renewal</span></div>
+            <div class="seg" role="radiogroup" aria-labelledby="cov_lbl">
+              <label><input type="radio" name="coverage_change" id="cov_none" value="None"><span>None</span></label>
+              <label><input type="radio" name="coverage_change" id="cov_exp" value="Expanded"><span>Expanded</span></label>
+              <label><input type="radio" name="coverage_change" id="cov_red" value="Reduced"><span>Reduced</span></label>
+            </div></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Relationship and service</legend>
+        <div class="grid2">
+          <div class="field"><div class="top"><label for="satisfaction_score">Satisfaction score</label><output id="o_satisfaction_score"></output></div><input type="range" id="satisfaction_score" min="1" max="10" step="1">
+            <label class="check"><input type="checkbox" id="no_survey"> Client did not answer the survey</label></div>
+          <div class="field"><div class="top"><label for="complaint_count">Complaints, last 12 months</label><output id="o_complaint_count"></output></div><input type="range" id="complaint_count" min="0" max="6" step="1"></div>
+          <div class="field"><div class="top"><label for="client_interactions_12m">Client interactions, last 12 months</label><output id="o_client_interactions_12m"></output></div><input type="range" id="client_interactions_12m" min="0" max="25" step="1"></div>
+          <div class="field"><div class="top"><label for="account_manager_changes">Account manager changes</label><output id="o_account_manager_changes"></output></div><input type="range" id="account_manager_changes" min="0" max="4" step="1"></div>
+          <div class="field"><div class="top"><label for="avg_response_time_hrs">Average response time</label><output id="o_avg_response_time_hrs"></output></div><input type="range" id="avg_response_time_hrs" min="0.5" max="72" step="0.5"></div>
+          <div class="field"><div class="top"><label for="producer_tenure_yrs">Producer tenure</label><output id="o_producer_tenure_yrs"></output></div><input type="range" id="producer_tenure_yrs" min="0.5" max="35" step="0.5"></div>
+        </div>
+        <details>
+          <summary>More account details</summary>
+          <div class="grid2">
+            <div class="field"><div class="top"><label for="primary_carrier">Primary carrier</label></div><select id="primary_carrier"></select></div>
+            <div class="field"><div class="top"><label for="days_until_renewal">Days until renewal</label><output id="o_days_until_renewal"></output></div><input type="range" id="days_until_renewal" min="90" max="180" step="1"></div>
+          </div>
+        </details>
+      </fieldset>
+    </form>
+
+    <aside class="result" id="result" aria-live="polite">
+      <div class="gauge">
+        <svg viewBox="0 0 240 140" role="img" aria-label="Churn probability gauge">
+          <path id="arcLow" fill="none" stroke-width="16"/>
+          <path id="arcMod" fill="none" stroke-width="16"/>
+          <path id="arcHigh" fill="none" stroke-width="16"/>
+          <g id="needle" style="transform-origin:120px 120px">
+            <line x1="120" y1="120" x2="120" y2="38" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+          </g>
+          <circle cx="120" cy="120" r="6" fill="var(--ink)"/>
+          <text x="22" y="138" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">0%</text>
+          <text x="196" y="138" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">100%</text>
+        </svg>
+        <div class="pct" id="pct">–</div>
+        <div class="cap">chance of leaving at the next renewal</div>
+      </div>
+      <div class="tier" id="tier"><div class="name" id="tierName"></div><div class="act" id="tierAct"></div></div>
+      <div class="money">
+        <div><div class="k">Annual commission</div><div class="v" id="rev"></div></div>
+        <div><div class="k">Revenue at risk</div><div class="v" id="rar"></div></div>
+      </div>
+      <div>
+        <h2>What is moving this score</h2>
+        <div class="drivers" id="drivers"></div>
+        <div class="hint" style="margin-top:6px">Compared with a typical account. <span class="up">Red</span> pushes risk up, <span class="down">green</span> pulls it down.</div>
+      </div>
+      <p class="note">Logistic regression from our MIST 5400 notebook, trained on 2,400 synthetic commercial accounts (ROC-AUC 0.77 on 600 held-out accounts). It scores the next renewal, not long-term loyalty. Use it to decide who gets attention first, and check the context with the client team before acting.</p>
+    </aside>
+  </div>
+
+  <section class="perf" aria-labelledby="perf_h">
+    <h2 id="perf_h">How reliable is this score?</h2>
+    <div class="cols">
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Model, 600 held-out accounts</th><th>Churners caught</th><th>Flags that were right</th><th>ROC-AUC</th></tr></thead>
+          <tbody>
+            <tr class="pick"><td>Logistic regression (this tool)</td><td>49%</td><td>43%</td><td>0.77</td></tr>
+            <tr><td>Random forest</td><td>44%</td><td>49%</td><td>0.76</td></tr>
+            <tr><td>Neural network</td><td>52%</td><td>45%</td><td>0.76</td></tr>
+            <tr><td>Guess "nobody leaves"</td><td>0%</td><td>n/a</td><td>0.50</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cap">
+        <div style="font-size:13px;font-weight:600">Brokers review 15% of accounts. Share of lost commission they reach:</div>
+        <div class="row"><span>Random accounts</span><span class="tr"><span style="width:12%"></span></span><b>12%</b></div>
+        <div class="row"><span>Largest accounts</span><span class="tr"><span style="width:35%"></span></span><b>35%</b></div>
+        <div class="row"><span>Highest churn risk</span><span class="tr"><span style="width:39%"></span></span><b>39%</b></div>
+        <div class="row best"><span>Revenue at risk</span><span class="tr"><span style="width:48%"></span></span><b>48%</b></div>
+      </div>
+    </div>
+    <p>Accounts are flagged at 30% risk or higher. The three trained models perform about the same, so we use logistic regression because brokers can see why each client was flagged. Ranking the call list by revenue at risk puts about four times more lost commission in front of a broker than reviewing accounts at random.</p>
+  </section>
+</div>
+
+<div class="mbar" id="mbar" aria-hidden="true">
+  <div class="mp" id="m_pct">–</div>
+  <div class="mt"><b id="m_tier"></b><span id="m_rar"></span></div>
+  <a href="#result">Details ↓</a>
+</div>
+
+<script>
+const P = {"num_cols": ["annual_premium", "annual_brokerage_revenue", "years_with_brokerage", "num_policies", "days_until_renewal", "premium_change_pct", "prior_increases_3yr", "num_claims", "total_claim_amount", "loss_ratio", "late_payments", "client_interactions_12m", "avg_response_time_hrs", "account_manager_changes", "producer_tenure_yrs", "satisfaction_score", "complaint_count"], "medians": [38900.0, 4390.5, 5.0, 2.0, 134.0, 6.8, 1.0, 0.0, 0.0, 0.0, 0.0, 8.0, 10.0, 0.0, 8.0, 8.0, 0.0], "indicator_features": ["satisfaction_score"], "scale_mean": [58597.916666666664, 6660.597916666667, 5.960541666666666, 2.3004166666666666, 134.66333333333333, 6.814333333333333, 0.9725, 0.6191666666666666, 16158.897083333333, 0.4533833333333333, 0.42125, 8.40875, 11.915375000000001, 0.49875, 8.919333333333332, 7.674166666666666, 0.7158333333333333, 0.06791666666666667], "scale_std": [64411.92484568668, 7292.064250579461, 4.291723298776832, 1.1616080060511904, 26.262425419006693, 9.100817887542977, 0.9412281427298413, 0.7999787323561935, 33162.97411981458, 0.9832499951973332, 0.6535531889856657, 3.467108320224026, 8.599972448175343, 0.7023758045614422, 5.079308636243935, 1.3452382585334919, 0.9447659175101994, 0.25160284786853176], "cat_cols": ["industry", "account_size", "primary_carrier", "coverage_change"], "categories": [["Construction", "Healthcare", "Hospitality", "Manufacturing", "Professional Services", "Retail", "Transportation"], ["Large", "Mid", "Small"], ["Carrier A", "Carrier B", "Carrier C", "Carrier D", "Carrier E", "Carrier F"], ["Expanded", "None", "Reduced"]], "feature_names": ["num__annual_premium", "num__annual_brokerage_revenue", "num__years_with_brokerage", "num__num_policies", "num__days_until_renewal", "num__premium_change_pct", "num__prior_increases_3yr", "num__num_claims", "num__total_claim_amount", "num__loss_ratio", "num__late_payments", "num__client_interactions_12m", "num__avg_response_time_hrs", "num__account_manager_changes", "num__producer_tenure_yrs", "num__satisfaction_score", "num__complaint_count", "num__missingindicator_satisfaction_score", "cat__industry_Construction", "cat__industry_Healthcare", "cat__industry_Hospitality", "cat__industry_Manufacturing", "cat__industry_Professional Services", "cat__industry_Retail", "cat__industry_Transportation", "cat__account_size_Large", "cat__account_size_Mid", "cat__account_size_Small", "cat__primary_carrier_Carrier A", "cat__primary_carrier_Carrier B", "cat__primary_carrier_Carrier C", "cat__primary_carrier_Carrier D", "cat__primary_carrier_Carrier E", "cat__primary_carrier_Carrier F", "cat__coverage_change_Expanded", "cat__coverage_change_None", "cat__coverage_change_Reduced"], "coef": [-0.29842072773281697, 0.19958854766304246, -0.28028321884693497, -0.4787932722521406, 0.04207092713196068, 0.6511857810389275, -0.0019457925260384311, -0.0696460545495295, 0.11224031028240417, 0.08661259916458906, 0.32404954068833697, -0.08573175419834912, 0.16379709419927574, 0.19494785021361283, -0.1837102079052318, -0.3939227094342595, 0.4550132227451586, 0.11673335374443287, 0.08021479397123593, -0.6288432974529854, 0.24201074824193053, 0.11721886945636484, 0.04165302596325175, 0.06905131586734037, 0.06668511727517325, 0.019909420563155908, -0.08832473250902571, 0.05640588526819134, 0.1395258140463656, 0.005273734206272292, -0.06194578067415071, -0.1270224079944014, -0.1390601120739449, 0.1712193258121763, -0.1701168128899829, -0.17256424545493143, 0.3306716316672333], "intercept": -1.8730239138157192, "typical": {"industry": "Construction", "account_size": "Mid", "primary_carrier": "Carrier B", "coverage_change": "None", "annual_premium": 38900.0, "annual_brokerage_revenue": 4390.5, "years_with_brokerage": 5.0, "num_policies": 2.0, "days_until_renewal": 134.0, "premium_change_pct": 6.8, "prior_increases_3yr": 1.0, "num_claims": 0.0, "total_claim_amount": 0.0, "loss_ratio": 0.0, "late_payments": 0.0, "client_interactions_12m": 8.0, "avg_response_time_hrs": 10.0, "account_manager_changes": 0.0, "producer_tenure_yrs": 8.0, "satisfaction_score": 8.0, "complaint_count": 0.0}, "ranges": {"annual_premium": [5198.0, 326633.9999999992], "annual_brokerage_revenue": [565.9300000000001, 35766.73999999974], "years_with_brokerage": [0.5, 20.400999999999975], "num_policies": [1.0, 6.0], "days_until_renewal": [90.0, 180.0], "premium_change_pct": [-14.405, 27.8], "prior_increases_3yr": [0.0, 3.0], "num_claims": [0.0, 3.0], "total_claim_amount": [0.0, 155274.62999999968], "loss_ratio": [0.0, 5.0], "late_payments": [0.0, 2.0099999999997635], "client_interactions_12m": [2.0, 18.0], "avg_response_time_hrs": [0.9, 40.40299999999993], "account_manager_changes": [0.0, 3.0], "producer_tenure_yrs": [1.0990000000000002, 24.5], "satisfaction_score": [4.0, 10.0], "complaint_count": [0.0, 4.0]}};
+
+const LABELS = {
+  annual_premium: "Annual premium", annual_brokerage_revenue: "Annual commission", years_with_brokerage: "Years with us",
+  num_policies: "Policies with us", days_until_renewal: "Days until renewal", premium_change_pct: "Premium change",
+  prior_increases_3yr: "Recent increases", num_claims: "Claims", total_claim_amount: "Claims paid", loss_ratio: "Loss ratio",
+  late_payments: "Late payments", client_interactions_12m: "Client interactions", avg_response_time_hrs: "Response time",
+  account_manager_changes: "Account manager changes", producer_tenure_yrs: "Producer tenure", satisfaction_score: "Satisfaction",
+  complaint_count: "Complaints", industry: "Industry", account_size: "Account size", primary_carrier: "Carrier", coverage_change: "Coverage change"
+};
+const money = v => "$" + Math.round(v).toLocaleString("en-US");
+const FMT = {
+  annual_premium: money, commission: v => v.toFixed(1) + "%", years_with_brokerage: v => v + " yrs", num_policies: v => String(v),
+  premium_change_pct: v => (v > 0 ? "+" : "") + v + "%", prior_increases_3yr: v => String(v), num_claims: v => String(v),
+  total_claim_amount: money, late_payments: v => String(v), satisfaction_score: v => v + " / 10", complaint_count: v => String(v),
+  client_interactions_12m: v => String(v), account_manager_changes: v => String(v), avg_response_time_hrs: v => v + " hrs",
+  producer_tenure_yrs: v => v + " yrs", days_until_renewal: v => v + " days"
+};
+const SLIDERS = Object.keys(FMT);
+const $ = id => document.getElementById(id);
+
+function fillSelect(id, opts) { $(id).innerHTML = opts.map(o => `<option>${o}</option>`).join(""); }
+fillSelect("industry", P.categories[P.cat_cols.indexOf("industry")]);
+fillSelect("primary_carrier", P.categories[P.cat_cols.indexOf("primary_carrier")]);
+
+// ----- the model: exactly the notebook's sklearn pipeline, re-implemented -----
+function sizeOf(prem) { return prem < 25000 ? "Small" : prem < 150000 ? "Mid" : "Large"; }
+function featureVector(acct) {
+  const raw = P.num_cols.map((c, i) => (acct[c] === null || Number.isNaN(acct[c])) ? P.medians[i] : acct[c]);
+  const ind = P.indicator_features.map(c => (acct[c] === null || Number.isNaN(acct[c])) ? 1 : 0);
+  const scaled = raw.concat(ind).map((v, i) => (v - P.scale_mean[i]) / P.scale_std[i]);
+  const oh = [];
+  P.cat_cols.forEach((c, j) => P.categories[j].forEach(cat => oh.push(String(acct[c]) === cat ? 1 : 0)));
+  return scaled.concat(oh);
+}
+function predict(acct) {
+  const x = featureVector(acct);
+  const z = x.reduce((s, v, i) => s + v * P.coef[i], P.intercept);
+  return 1 / (1 + Math.exp(-z));
+}
+window.churnPredict = predict;
+
+// which original column each model feature belongs to (for grouping driver contributions)
+const FEAT_GROUP = P.feature_names.map(f => {
+  const name = f.split("__")[1];
+  if (f.startsWith("num__missingindicator_")) return name.replace("missingindicator_", "");
+  if (f.startsWith("cat__")) return P.cat_cols.find(c => name.startsWith(c + "_"));
+  return name;
+});
+const TYPICAL = Object.assign({}, P.typical);
+const xTypical = featureVector(TYPICAL);
+
+// ----- form state -----
+const PRESETS = {
+  typical: Object.assign({}, P.typical, { commission: 11.5, no_survey: false }),
+  loyal: Object.assign({}, P.typical, { industry: "Manufacturing", annual_premium: 85000, commission: 11.5, years_with_brokerage: 14,
+    num_policies: 4, premium_change_pct: 2, prior_increases_3yr: 0, satisfaction_score: 9, client_interactions_12m: 15,
+    avg_response_time_hrs: 4, producer_tenure_yrs: 15, no_survey: false }),
+  risk: Object.assign({}, P.typical, { industry: "Hospitality", annual_premium: 120000, commission: 12, years_with_brokerage: 1.5,
+    num_policies: 1, premium_change_pct: 18, prior_increases_3yr: 2, num_claims: 1, total_claim_amount: 30000, late_payments: 1,
+    coverage_change: "Reduced", satisfaction_score: 5, complaint_count: 2, client_interactions_12m: 4, account_manager_changes: 1,
+    avg_response_time_hrs: 30, producer_tenure_yrs: 2, no_survey: false })
+};
+
+function setForm(v) {
+  SLIDERS.forEach(k => { if (k in v) $(k).value = v[k]; });
+  $("industry").value = v.industry; $("primary_carrier").value = v.primary_carrier;
+  document.querySelector(`input[name="coverage_change"][value="${v.coverage_change}"]`).checked = true;
+  $("no_survey").checked = !!v.no_survey;
+}
+function readForm() {
+  const a = {};
+  SLIDERS.forEach(k => a[k] = parseFloat($(k).value));
+  a.industry = $("industry").value; a.primary_carrier = $("primary_carrier").value;
+  a.coverage_change = document.querySelector('input[name="coverage_change"]:checked').value;
+  a.no_survey = $("no_survey").checked;
+  return a;
+}
+function toAccount(f) {
+  const acct = {};
+  P.num_cols.forEach(c => acct[c] = f[c]);
+  acct.annual_brokerage_revenue = f.annual_premium * f.commission / 100;
+  acct.loss_ratio = Math.min(f.total_claim_amount / f.annual_premium, 5);
+  acct.satisfaction_score = f.no_survey ? NaN : f.satisfaction_score;
+  acct.industry = f.industry; acct.primary_carrier = f.primary_carrier; acct.coverage_change = f.coverage_change;
+  acct.account_size = sizeOf(f.annual_premium);
+  return acct;
+}
+
+// ----- gauge -----
+function polar(p, r) { const a = Math.PI * (1 - p); return [120 + r * Math.cos(a), 120 - r * Math.sin(a)]; }
+function arc(p0, p1, r) { const [x0, y0] = polar(p0, r), [x1, y1] = polar(p1, r); return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; }
+[["arcLow", 0, .3, "var(--low)"], ["arcMod", .3, .6, "var(--mod)"], ["arcHigh", .6, 1, "var(--high)"]].forEach(([id, a, b, c]) => {
+  const el = $(id); el.setAttribute("d", arc(a + (a ? .004 : 0), b - (b < 1 ? .004 : 0), 92)); el.setAttribute("stroke", c);
+});
+
+const TIERS = [
+  { max: .30, cls: "low", name: "Low risk", act: "Normal renewal process." },
+  { max: .60, cls: "mod", name: "Moderate risk", act: "Account manager reviews the account before the renewal quote goes out." },
+  { max: 1.01, cls: "high", name: "High risk", act: "Producer reaches out early with a retention plan: remarket to other carriers, address open complaints." }
+];
+
+function render() {
+  const f = readForm();
+  SLIDERS.forEach(k => { const o = $("o_" + k); if (o) o.textContent = FMT[k](f[k]); });
+  $("satisfaction_score").disabled = f.no_survey;
+  $("o_satisfaction_score").textContent = f.no_survey ? "no answer" : FMT.satisfaction_score(f.satisfaction_score);
+  const acct = toAccount(f);
+  $("lr_hint").textContent = "Loss ratio " + acct.loss_ratio.toFixed(2) + " · " + acct.account_size + " account";
+
+  const p = predict(acct);
+  $("pct").textContent = p < 0.005 ? "<1%" : p > 0.995 ? ">99%" : Math.round(p * 100) + "%";
+  $("needle").style.transform = `rotate(${(p * 180 - 90).toFixed(1)}deg)`;
+  const t = TIERS.find(t => p < t.max);
+  $("tier").className = "tier " + t.cls; $("tierName").textContent = t.name; $("tierAct").textContent = t.act;
+  $("rev").textContent = money(acct.annual_brokerage_revenue);
+  $("rar").textContent = money(p * acct.annual_brokerage_revenue);
+  $("m_pct").textContent = $("pct").textContent;
+  $("m_tier").textContent = t.name;
+  $("m_rar").textContent = money(p * acct.annual_brokerage_revenue) + " revenue at risk";
+  $("mbar").className = "mbar " + t.cls;
+
+  // driver contributions on the log-odds scale vs the typical account
+  const x = featureVector(acct), contrib = {};
+  x.forEach((v, i) => { const g = FEAT_GROUP[i]; contrib[g] = (contrib[g] || 0) + P.coef[i] * (v - xTypical[i]); });
+  // premium and commission move together; show them as one driver
+  contrib["account value"] = (contrib.annual_premium || 0) + (contrib.annual_brokerage_revenue || 0) + (contrib.account_size || 0);
+  delete contrib.annual_premium; delete contrib.annual_brokerage_revenue; delete contrib.account_size;
+  LABELS["account value"] = "Account size and premium";
+  const top = Object.entries(contrib).filter(([, v]) => Math.abs(v) > 0.02).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 6);
+  const scale = Math.max(1.5, ...top.map(([, v]) => Math.abs(v)));
+  $("drivers").innerHTML = top.length ? top.map(([k, v]) => {
+    const w = Math.abs(v) / scale * 50, cls = v > 0 ? "up" : "down";
+    const style = v > 0 ? `left:50%;width:${w}%;background:var(--high)` : `left:${50 - w}%;width:${w}%;background:var(--low)`;
+    return `<div class="drv"><span class="lbl">${LABELS[k] || k}</span><span class="bar"><span class="fill" style="${style}"></span></span><span class="num ${cls}">${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}</span></div>`;
+  }).join("") : `<div class="hint">This account looks like a typical client, so nothing stands out.</div>`;
+}
+
+document.querySelectorAll("button.chip").forEach(b => b.addEventListener("click", () => {
+  setForm(PRESETS[b.dataset.preset]);
+  document.querySelectorAll("button.chip").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  render();
+}));
+$("form").addEventListener("input", () => {
+  document.querySelectorAll("button.chip").forEach(x => x.setAttribute("aria-pressed", "false"));
+  render();
+});
+setForm(PRESETS.typical);
+render();
+</script>
+
+</body>
+</html>
